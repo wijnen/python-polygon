@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset='utf-8'/>
+		<title>Box Maker</title>
+		<link rel='stylesheet' href='box.css'/>
+		<script type='application/javascript' src='box.js'></script>
+	</head>
+	<body>
+		<p>
+			Length: <input type='text' id='length'/><br/>
+			Width: <input type='text' id='width'/><br/>
+			Height: <input type='text' id='height'/><br/>
+			<label>With Top: <input type='checkbox' id='top'/></label><br/>
+			Tab Size: <input type='text' id='tabsize'/><br/>
+			Tab Depth: <input type='text' id='depth'/><br/>
+			Cut Line Width: <input type='text' id='cut'/><br/>
+			<button type='button' onclick='create()'>Create</button>
+			<a id='link' download='box.svg'>Download</a>
+			<div id='preview'></div>
+		</p>
+	</body>
+</html>
