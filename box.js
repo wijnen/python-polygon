@@ -177,32 +177,29 @@ function make_rect(bbox, l, w, splits, type, top, right, bottom, left) { // {{{
 	else {
 		if (type[1] == 'm') {
 			// Add dividers on divider.
-			var part, post;
+			var part, s;
 			if (type[0] == 'h') {
+				s = -plate;
 				part = function() {
-					line(h / 2 + plate, 1);
-					line(plate, 0);
-					line(h / 2 + plate, 3);
+					line(w / 2 + plate, 1, true, false);
+					line(plate, 0, false, false);
+					line(w / 2 + plate, 3, false, true);
 				};
-				post = function() {};
 			}
 			else {
+				s = w + plate;
 				part = function() {
-					move(plate, 0);
-					line(w / 2 + plate, 3);
-					line(plate, 2);
-					line(w / 2 + plate, 1);
-					move(plate, 0);
+					// Invert convexity settings because distances are negative.
+					line(-(w / 2 + plate), 1, false, true);
+					line(-plate, 2, true, true);
+					line(-(w / 2 + plate), 3, true, false);
 				};
-				move(w + plate, 1);
-				post = function() { move(w + plate, 3); };
 			}
-			move(plate / 2, 0);
-			for (var i = 0; i < splits.length; ++i) {
+			target = [0, s];
+			for (var i = 0; i < splits.length - 1; ++i) {
 				move(splits[i], 0);
 				part();
 			}
-			post();
 		}
 		else {
 			// Add dividers for edge.
@@ -215,7 +212,7 @@ function make_rect(bbox, l, w, splits, type, top, right, bottom, left) { // {{{
 		bbox[1] = dy;
 	if (type == 'base')
 		move(plate + 2 * halfcut, 1);
-	move(l + 6 * halfcut + 3 * plate, 0)
+	target = [l + 6 * halfcut + 3 * plate, 0]
 	var ret = finish_path();
 	pen = target;
 	return ret;
@@ -233,6 +230,7 @@ function parseNumbers(input) { // {{{
 } // }}}
 
 function create() { // {{{
+	offset = [0, 0];
 	tabsize = Number(document.getElementById('tabsize').value);
 	plate = Number(document.getElementById('depth').value);
 	halfcut = Number(document.getElementById('cut').value) / 2;
@@ -245,8 +243,9 @@ function create() { // {{{
 	var paths = [];
 	target = [halfcut * 2 + plate, halfcut * 2 + plate];
 	paths.push(make_rect(bbox, l[0], w[0], [w[1], l[1]], 'base'));
+	paths.push(make_rect(bbox, l[0], h, l[1], 'hm', false));
+	paths.push(make_rect(bbox, l[0], h, l[1], 'vm', false));
 	if (with_top) {
-		paths.push(make_rect(bbox, l[0], h, l[1], 'hm'));
 	}
 	else {
 		for (var n = 0; n < 2; ++n) {
