@@ -1,6 +1,6 @@
 // Module for handling polygons
 
-// Data structures:
+// Data structures: {{{
 
 // A polyline is stored as an array:
 //   [[x, y], [x, y], [x, y], ...]
@@ -18,10 +18,12 @@
 //   translate(shape, [x, y]) -> shape: translate shape.
 //   svg([shape, ...])-> string: encode shapes as svg (each shape is a separate path).
 //   svgdata([shape, ...]) -> string: as above, then encode result as data url.
+// }}}
 
 var svg_sep = 5;	// Space between objects when building svg.
 var svg_lw = 1;		// Line width in svg.
 
+// Math helpers. {{{
 function invert(shape) {
 	var ret = [];
 	for (var s = 0; s < shape.length; ++s) {
@@ -80,8 +82,9 @@ function copy_array(A) {
 		ret.push(A[i]);
 	return ret;
 }
+// }}}
 
-function merge(poly1, poly2) {
+function merge(poly1, poly2) { // {{{
 	// Only handle polygons, not open polylines.
 	if (poly1[0] != poly1[poly1.length - 1] || poly2[0] != poly2[poly2.length - 1])
 		return null;
@@ -90,26 +93,61 @@ function merge(poly1, poly2) {
 	// Remove inner segments.
 	// At first intersection, rotate polygon so the intersection is the first point.
 	// Start breaking it up at subsequent intersections.
+	// Store p1 segments while scanning.
+	// p2 is array of poly2 segments.
+	// Every segment in p1 is checked against all parts of p2.
+	// At the end, all p2 segments are added.
+	// After that, internal segments are removed and loops care closed.
 	var p1 = copy_array(poly1);	// Current (possibly rotated) polygon.
-	var p2 = copy_array(poly2);
+	var p2 = [copy_array(poly2)];
 	// All intersections that were found. If empty, polygons are not yet rotated.
-	// Each element is {'pos': [x, y], 'p1': [segments from p1], 'p2': [segments from p2]}.
+	// Each element is {'pos': [x, y], 'segments': [[[x, y], ...], ...]}.
 	var intersection = [];
-	for (var p1 = 0; p1 < poly1.length - 1; ++p1) {
-		for (var p2 = 0; p2 = poly2.length - 1; ++p2) {
-			var dA = project(poly1[p1], poly1[p1 + 1], poly2[p2]);
-			var dB = project(poly1[p1], poly1[p1 + 1], poly2[p2 + 1]);
-			if (((dA[1] > 0) && (dB[1] > 0)) || ((dA[1] < 0) && (dB[1] < 0))) {
-				// Both points are on the same side of the line; ignore.
-				continue;
+	for (var ip1 = 0; ip1 < p1.length - 1; ++ip1) {
+		for (var ip2 = 0; ip2 = p2.length - 1; ++ip2) {
+			var dB = project(poly1[p1], poly1[p1 + 1], poly2[0]);
+			for (var jp2 = 0; jp2 < p2[ip2].length; ++jp2) {
+				var dA = dB;
+				var dB = project(poly1[p1], poly1[p1 + 1], poly2[p2 + 1]);
+				if (((dA[1] > 0) && (dB[1] > 0)) || ((dA[1] < 0) && (dB[1] < 0))) {
+					// Both points are on the same side of the line; ignore.
+					continue;
+				}
+				var f = (0 - dA[0]) / (dB[0] - dA[0]);
+				var new_point = [];
+				for (var c = 0; c < 2; ++c)
+					new_point.push(p2[ip2][jp2][c] + f * (p2[ip2][jp2 + 1][c] - p2[ip2][jp2][c]));
+				if (intersection.length == 0) {
+					// Rotate polygons.
+					var part1 = p1.splice(0, ip1, new_point);
+					p1.pop();	// Remove last point, which is the same as the first point.
+					p1.concat(part1);	// Add first part of polygon.
+					p1.push(new_point);	// Add last point equal to first point.
+					// rotate poly2.
+					part1 = p2[0].splice(0, ip2, new_point);
+					p2[0].pop();	// Remove last point, which is the same as the first point.
+					p2[0].concat(part1);	// Add first part of polygon.
+					p2[0].push(new_point);	// Add last point equal to first point.
+					// Add intersection.
+					intersection.push(p1);
+				}
+				else {
+					// Cut off and store p1 segment.
+					p1 = [new_point].concat(p1.splice(ip1 + 1, p1.length - (ip1 + 1), new_point));
+					ip1 = 0;
+					intersection.push(p1);
+					// Split p2 segment.
+					var segment = p2[ip2].splice(0, jp2, new_point);
+					segment.push(new_point);
+					p2.append(segment);
+				}
 			}
-			// TODO: find other side, break it up, connect pieces.
-			// Problem: if there are multiple overlaps, it needs to be broken into multiple separate loops.
 		}
 	}
 }
+// }}}
 
-function unite(shape) {
+function unite(shape) { // {{{
 	var ret = [shape[0]];
 	for (var s = 1; s < shape.length; ++s) {
 		var new_poly = shape[s];
@@ -127,17 +165,20 @@ function unite(shape) {
 	// TODO: remove polygons contained in other polygons. (hole in hole, not solid in hole.)
 	return shape;
 }
+// }}}
 
-function intersect(shape) {
+function intersect(shape) { // {{{
 	return invert(unite(invert(shape)));
 }
+// }}}
 
-function offset(shape, distance) {
+function offset(shape, distance) { // {{{
 	// TODO
 	return shape;
 }
+// }}}
 
-function bbox(shape) {
+function bbox(shape) { // {{{
 	var ret = [NaN, NaN, NaN, NaN];
 	for (var p = 0; p < shape.length; ++p) {
 		var poly = shape[p];
@@ -154,8 +195,9 @@ function bbox(shape) {
 	}
 	return ret;
 }
+// }}}
 
-function translate(shape, xy) {
+function translate(shape, xy) { // {{{
 	var ret = [];
 	for (var p = 0; p < shape.length; ++p) {
 		var poly = shape[p];
@@ -165,8 +207,9 @@ function translate(shape, xy) {
 	}
 	return ret;
 }
+// }}}
 
-function svg() {
+function svg() { // {{{
 	var bb = [-svg_sep, 0];
 	var x_pos = [0];
 	for (var a = 0; a < arguments.length; ++a) {
@@ -195,7 +238,11 @@ function svg() {
 	data += '</g>\n</svg>\n';
 	return data;
 }
+// }}}
 
-function svgdata() {
+function svgdata() { // {{{
 	return 'data:image/svg,' + encodeURIComponent(svg(arguments));
 }
+// }}}
+
+// vim: set foldmethod=marker :
