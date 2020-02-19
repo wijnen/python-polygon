@@ -36,7 +36,7 @@ function invert(shape) {
 }
 
 function diff(A, B) {
-	return [B[0] - A[0], B[1] - A[1]];
+	return [A[0] - B[0], A[1] - B[1]];
 }
 
 function inner(A, B) {
@@ -63,7 +63,8 @@ function normalize(A) {
 // Returns [distance on line, distance from line].
 // Distance from line is positive if it is on the right when looking along the line, negative if it is on the left.
 function project(origin, online, target) {
-	var line = normalize(diff(online, origin));
+	var d = diff(online, origin);
+	var line = normalize(d);
 	var v = diff(target, origin);
 	var dist_on = inner(line, v);
 	//var l = len(v);
@@ -75,19 +76,76 @@ function project(origin, online, target) {
 	var dist_from = inner(perp, v);
 	return [dist_on, dist_from];
 }
-
-function copy_array(A) {
-	var ret = [];
-	for (var i = 0; i < A.length; ++i)
-		ret.push(A[i]);
-	return ret;
-}
 // }}}
+
+function Segment(A) {
+	this.path = [];
+	for (var i = 0; i < A.length; ++i)
+		this.path.push(A[i]);
+	this.start = null;
+	this.end = null;
+}
+
+function Intersection(pos, e1, s1, e2, s2) {
+	this.pos = pos;
+	s1.start = this;
+	s2.start = this;
+	e1.end = this;
+	e2.end = this;
+	this.segments = [[e1, false], [s1, true], [e2, false], [s2, true]];
+}
+
+function show_intersection(intersection, which) {
+	console.info('show intersection', which === undefined ? 'all' : which);
+	for (var i = 0; i < intersection.length; ++i) {
+		if (which !== undefined && i != which)
+			continue;
+		var p = intersection[i];
+		console.info('position', p.pos);
+		for (var s = 0; s < p.segments.length; ++s) {
+			var l = p.segments[s];
+			var len = l[0].path.length;
+			if (l[1])
+				console.info('-->', l[0].path[1], l[0].path[len - 1], l[2]);
+			else
+				console.info('<--', l[0].path[len - 2], l[0].path[0], l[2]);
+		}
+	}
+}
+
+function is_hole(poly) {
+	// Return true if polygon is a hole (goes counter clockwise), false otherwise.
+	// poly is rotated so leftmost point is first.
+	var angles = compute_angles(poly);
+	return angles[0] < angles[1];
+}
+
+function check_hole(poly, ref, hole) {
+	// Return true if ref is a hole in solid poly, or a solid in hole poly.
+	// Return false if ref is a hole in hole poly, or a solid in solid poly.
+	// Return null otherwise.
+	return null;	// TODO.
+}
+
+function compute_angles(poly) {
+	// Compute angles of starting and ending segment.
+	var others = [poly[1], poly[poly.length - 2]];
+	var ret = [];
+	for (var c = 0; c < others.length; ++c) {
+		var dx = others[c][0] - poly[0][0];
+		var dy = others[c][1] - poly[0][1];
+		ret.push(Math.atan2(dy, dx));
+	}
+}
 
 function merge(poly1, poly2) { // {{{
 	// Only handle polygons, not open polylines.
-	if (poly1[0] != poly1[poly1.length - 1] || poly2[0] != poly2[poly2.length - 1])
-		return null;
+	for (var i = 0; i < 2; ++i) {
+		if (poly1[0][i] != poly1[poly1.length - 1][i] || poly2[0][i] != poly2[poly2.length - 1][i]) {
+			console.info('At least one of the polylines is not a polygon', i, poly1[0][i], poly1[poly1.length - 1][i], poly2[0][i], poly2[poly2.length - 1][i]);
+			return null;
+		}
+	}
 	// Use segments p..p+1
 	// Break every polygon into segments.
 	// Remove inner segments.
@@ -98,52 +156,263 @@ function merge(poly1, poly2) { // {{{
 	// Every segment in p1 is checked against all parts of p2.
 	// At the end, all p2 segments are added.
 	// After that, internal segments are removed and loops care closed.
-	var p1 = copy_array(poly1);	// Current (possibly rotated) polygon.
-	var p2 = [copy_array(poly2)];
+	var p1 = new Segment(poly1);	// Current (possibly rotated) polygon.
+	var p2 = [new Segment(poly2)];
 	// All intersections that were found. If empty, polygons are not yet rotated.
-	// Each element is {'pos': [x, y], 'segments': [[[x, y], ...], ...]}.
+	// Each element is {'pos': [x, y], 'segments': [Segment, ...]}.
+	// Each Segment is {'path': [[x, y], ...], 'start': intersection, 'end': intersection}.
 	var intersection = [];
-	for (var ip1 = 0; ip1 < p1.length - 1; ++ip1) {
-		for (var ip2 = 0; ip2 = p2.length - 1; ++ip2) {
-			var dB = project(poly1[p1], poly1[p1 + 1], poly2[0]);
-			for (var jp2 = 0; jp2 < p2[ip2].length; ++jp2) {
-				var dA = dB;
-				var dB = project(poly1[p1], poly1[p1 + 1], poly2[p2 + 1]);
-				if (((dA[1] > 0) && (dB[1] > 0)) || ((dA[1] < 0) && (dB[1] < 0))) {
-					// Both points are on the same side of the line; ignore.
-					continue;
-				}
-				var f = (0 - dA[0]) / (dB[0] - dA[0]);
+	// Loop over p1. First rotate, then cut on intersections. {{{
+	// On rotate, create intersection and add both starts and ends from p1 and p2 to it.
+	// On cut, cut p1 and p2, create new intersection with both new starts and ends on it.
+	for (var ip1 = 0; ip1 < p1.path.length - 1; ++ip1) {
+		for (var ip2 = 0; ip2 < p2.length; ++ip2) {
+			var segment1 = [];
+			for (var c = 0; c < 2; ++c)
+				segment1.push(p1.path[ip1 + 1][c] - p1.path[ip1][c]);
+			var len1 = len(segment1);
+			var dB = project(p1.path[ip1], p1.path[ip1 + 1], p2[ip2].path[0]);
+			for (var jp2 = 0; jp2 < p2[ip2].path.length - 1; ++jp2) {
+				// check if points are equal.
 				var new_point = [];
-				for (var c = 0; c < 2; ++c)
-					new_point.push(p2[ip2][jp2][c] + f * (p2[ip2][jp2 + 1][c] - p2[ip2][jp2][c]));
+				var dA = dB;
+				dB = project(p1.path[ip1], p1.path[ip1 + 1], p2[ip2].path[jp2 + 1]);
+				if (p1.path[ip1][0] == p2[ip2].path[jp2][0] && p1.path[ip1][1] == p2[ip2].path[jp2][1]) {
+					// These points are equal; cut polygon without adding a new point.
+					new_point = p1.path[ip1];
+				}
+				else {
+					if (((dA[1] >= 0) && (dB[1] >= 0)) || ((dA[1] <= 0) && (dB[1] <= 0))) {
+						// Both points are on the same side of the line; ignore.
+						// Special handling when point is on the line.
+						if (dA[1] == 0) {
+							var f = dA[0] / len1;
+							if (f <= 0 || f >= 1)
+								continue;
+							// Point A is on p1.
+							new_point = p2[ip2].path[jp2];
+							p1.path.splice(ip1 + 1, 0, new_point);
+						}
+						else
+							continue;
+					}
+					var fromA = dA[1] * (dB[0] - dA[0]) / (dA[1] - dB[1]);
+					var f = (dA[0] + fromA) / len1;
+					if (f <= 0 || f >= 1) {
+						// Intersection is not on the segment; ignore.
+						// Special handling when point is on the line.
+						if (f == 0) {
+							// AB goes through start of p1.
+							new_point = p1.path[ip1];
+							p2[ip2].path.splice(jp2 + 1, 0, new_point);
+						}
+						else
+							continue;
+					}
+					else {
+						for (var c = 0; c < 2; ++c)
+							new_point.push(p1.path[ip1][c] + f * segment1[c]);
+						p1.path.splice(ip1 + 1, 0, new_point);
+						p2[ip2].path.splice(jp2 + 1, 0, new_point);
+					}
+				}
 				if (intersection.length == 0) {
 					// Rotate polygons.
-					var part1 = p1.splice(0, ip1, new_point);
-					p1.pop();	// Remove last point, which is the same as the first point.
-					p1.concat(part1);	// Add first part of polygon.
-					p1.push(new_point);	// Add last point equal to first point.
-					// rotate poly2.
-					part1 = p2[0].splice(0, ip2, new_point);
-					p2[0].pop();	// Remove last point, which is the same as the first point.
-					p2[0].concat(part1);	// Add first part of polygon.
-					p2[0].push(new_point);	// Add last point equal to first point.
+					var part1 = p1.path.splice(0, ip1 + 1);
+					p1.path.pop();	// Remove last point, which is the same as the first point.
+					p1.path = p1.path.concat(part1);	// Add first part of polygon.
+					p1.path.push(new_point);	// Add last point equal to first point.
+					// rotate p2.
+					part1 = p2[0].path.splice(0, jp2 + 1);
+					p2[0].path.pop();	// Remove last point, which is the same as the first point.
+					p2[0].path = p2[0].path.concat(part1);	// Add first part of polygon.
+					p2[0].path.push(new_point);	// Add last point equal to first point.
 					// Add intersection.
-					intersection.push(p1);
+					intersection.push(new Intersection(new_point, p1, p1, p2[0], p2[0]));
 				}
 				else {
 					// Cut off and store p1 segment.
-					p1 = [new_point].concat(p1.splice(ip1 + 1, p1.length - (ip1 + 1), new_point));
+					var path1 = p1.path.splice(ip1 + 1, p1.path.length - (ip1 + 1), new_point);
 					ip1 = 0;
-					intersection.push(p1);
+					var new_p1 = new Segment(path1);
+					new_p1.end = p1.end;
+					for (var s = 0; s < p1.end.segments.length; ++s) {
+						if (p1.end.segments[s][1] == false && p1.end.segments[s][0] === p1) {
+							// This was the polyline ending at this intersection. Replace it with new_p1.
+							p1.end.segments[s][0] = new_p1;
+							break;
+						}
+					}
 					// Split p2 segment.
-					var segment = p2[ip2].splice(0, jp2, new_point);
-					segment.push(new_point);
-					p2.append(segment);
+					var path2 = p2[ip2].path.splice(jp2 + 1, p2[ip2].path.length - (jp2 + 1), new_point);
+					var new_p2 = new Segment(path2);
+					new_p2.end = p2[ip2].end;
+					for (var s = 0; s < p2[ip2].end.segments.length; ++s) {
+						if (p2[ip2].end.segments[s][1] == false && p2[ip2].end.segments[s][0] === p2[ip2]) {
+							// This was the polyline ending at this intersection. Replace it with new_p2.
+							p2[ip2].end.segments[s][0] = new_p2;
+							break;
+						}
+					}
+					intersection.push(new Intersection(new_point, p1, new_p1, p2[ip2], new_p2));
+					p2.push(new_p2);
+					p1 = new_p1;
 				}
 			}
 		}
+	} // }}}
+	// intersection is now a list of all intersections, with links to their segments.
+	// If there are no intersections, nothing has been cut.
+	if (intersection.length == 0) {
+		// TODO: If polygons are disjoint, return null. Otherwise remove one and return the other.
+		return null;
 	}
+	// Remove connected "inner" segments and merge connected segments. {{{
+	for (var i = 0; i < intersection.length; ++i) {
+		var p = intersection[i];
+		// Sort segments by exit angle. // {{{
+		for (var s = 0; s < p.segments.length; ++s) {
+			var seg = p.segments[s];
+			var d;
+			if (seg[1]) {
+				if (!(seg[0].path[0] == p.pos)) {
+					console.error('start segment does not start at intersection', seg[0].path[0], p.pos, seg[0].path)
+					return;
+				}
+				d = [seg[0].path[1][0] - seg[0].path[0][0], seg[0].path[1][1] - seg[0].path[0][1]];
+			}
+			else {
+				var l = seg[0].path.length;
+				if (!(seg[0].path[l - 1] == p.pos)) {
+					console.error('end segment does not end at intersection', seg[0].path[l - 1], p.pos, seg[0].path)
+					return;
+				}
+				d = [seg[0].path[l - 2][0] - seg[0].path[l - 1][0], seg[0].path[l - 2][1] - seg[0].path[l - 1][1]];
+			}
+			seg.push(Math.atan2(d[1], d[0]));
+		}
+		p.segments.sort(function(a, b) {
+			return a[2] - b[2] || b[1] - a[1];
+		});
+		// Make sure the edge lines are opposite directions.
+		if (p.segments[0][1] == p.segments[p.segments.length - 1][1]) {
+			for (var s = 0; s < p.segments.length - 1; ++s) {
+				if (p.segments[s][1] == true && p.segments[s + 1][1] == false) {
+					// Rotate list.
+					var part1 = p.segments.splice(0, s + 1);
+					p.segments = p.segments.concat(part1);
+					break;
+				}
+			}
+		}
+		show_intersection(intersection, i);
+		// }}}
+		// Remove inner segments. {{{
+		for (var s = 0; s < p.segments.length; ++s) {
+			if (p.segments[s][1] ^ p.segments[(s + 1) % p.segments.length][1])
+				continue;
+			// One of the segments needs to be removed.
+			var is_start = p.segments[s][1];
+			var idx = s + (is_start ? 1 : 0);
+			var other = p.segments[idx][0][is_start ? 'end' : 'start'];
+			for (var o = 0; o < other.segments.length; ++o) {
+				if (other.segments[o][0] === p.segments[idx] && other.segments[o][1] == !is_start) {
+					other.segments.splice(o, 1);
+					break;
+				}
+			}
+			p.segments.splice(idx, 1);
+			--s;	// Compensate for removal of element.
+		}
+		// }}}
+		var ret = [];
+		while (p.segments.length > 0) {
+			// All same-direction pairs have been cleaned up.
+			// Connect first two segments until there are none left.
+			var A = p.segments[0][0];
+			var B = p.segments[1][0];
+			if (A === B) {
+				// This is a closed polygon. Record it.
+				if (A.length >= 4) {
+					// Only record polygons with nonzero surface.
+					console.info('found polygon', A.path);
+					ret.push(A.path);
+				}
+				p.segments.splice(0, 2);
+				continue;
+			}
+			// Make sure A is the incoming segment, B the outgoing one.
+			if (p.segments[0][1] == true) {
+				var C = A;
+				A = B;
+				B = C;
+			}
+			// Make A the new segment.
+			console.info('merge', A.path[0], A.path[A.path.length - 2], A.path[A.path.length - 1], B.path[0], B.path[1], B.path[B.path.length - 1]);
+			A.path.pop();
+			A.path = A.path.concat(B.path);
+			for (var o = 0; o < B.end.segments.length; ++o) {
+				if (B.end.segments[o][0] === B && B.end.segments[o][1] == false) {
+					B.end.segments[o] = [A, false];
+					A.end = B.end;
+					break;
+				}
+			}
+			p.segments.splice(0, 2);
+		}
+	} // }}}
+	// Rotate all polygons so left-most point is first. // {{{
+	for (var r = 0; r < ret.length; ++r) {
+		var left = null;
+		for (var p = 0; p < ret[r].length; ++p) {
+			if (left === null || ret[r][p][0] < ret[r][left][0])
+				left = p;
+		}
+		if (left > 0) {
+			var first = ret[r].splice(0, left + 1, ret[r][left]);
+			ret[r].pop();
+			ret[r] = ret[r].concat(first);
+		}
+	} // }}}
+	ret.sort(function(a, b) { // {{{
+		// Sort by left-most point. Use angle for sorting equal points.
+		if (a[0][0] != b[0][0])
+			return a[0][0] - b[0][0];
+		if (a[0][1] != b[0][1])
+			return a[0][1] - b[0][1];
+		var angs = [];
+		var ab = [a, b];
+		for (var iab = 0; iab < ab.length; ++iab) {
+			angs.push(Math.max(compute_angles(ab[iab])));
+		}
+		return angs[0] - angs[1];
+	}); // }}}
+	// Remove unconnected inner solids and outer holes. {{{
+	for (var r = 0; r < ret.length; ++r) {
+		var hole = is_hole(ret[r]);
+		var checked = false;
+		// FIXME: This is wrong.
+		for (var i = r - 1; i >= 0; --i) {
+			var a = check_hole(ret[i], ret[r][0], hole);
+			if (a === true) {
+				checked = true;
+				break;
+			}
+			else if (a === false) {
+				// Remove this polygon.
+				ret.splice(r, 1);
+				--r;
+				checked = true;
+				break;
+			}
+		}
+		if (!checked && hole) {
+			// This is an outer hole; remove it.
+			ret.splice(r, 1);
+			--r;
+		}
+	} // }}}
+	return ret;
 }
 // }}}
 
@@ -162,7 +431,6 @@ function unite(shape) { // {{{
 				ret.push(n[nn]);
 		}
 	}
-	// TODO: remove polygons contained in other polygons. (hole in hole, not solid in hole.)
 	return shape;
 }
 // }}}

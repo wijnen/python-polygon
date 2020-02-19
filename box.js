@@ -230,7 +230,10 @@ function parseNumbers(input) { // {{{
 } // }}}
 
 function create() { // {{{
-	offset = [0, 0];
+	var A = [[0, 0], [10, 10], [0, 20], [0, 0]];
+	var B = [[5, 0], [20, 10], [5, 20], [5, 0]];
+	console.info(merge(A, B));
+	/*offset = [0, 0];
 	tabsize = Number(document.getElementById('tabsize').value);
 	plate = Number(document.getElementById('depth').value);
 	halfcut = Number(document.getElementById('cut').value) / 2;
@@ -255,7 +258,7 @@ function create() { // {{{
 	}
 	var svg = make_svg(paths, bbox[0], bbox[1]);
 	document.getElementById('link').href = 'data:image/svg,' + encodeURIComponent(svg);
-	document.getElementById('preview').innerHTML = svg;
+	document.getElementById('preview').innerHTML = svg;*/
 } // }}}
 
 // vim: set foldmethod=marker :
