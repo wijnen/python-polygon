@@ -1,0 +1,8 @@
+Part.align('tl') / Part.align(('top', 'left')) -> move points so top left is where center center was.
+Part.cleanup() -> remove non-polygon lines in holes.
+
+Support beziers. Todo: compute intersection and contains.
+
+Offset and turn negative length holes into cuts.
+
+
