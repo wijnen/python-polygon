@@ -350,7 +350,11 @@ class Segment:
 	def __add__(self, other):
 		if isinstance(other, Vector):
 			return Segment(*(p + other for p in self.p))
-		raise TypeError('Can only add Vectors to segments')
+		raise TypeError('Can only add Vectors to Segments')
+	def __sub__(self, other):
+		if isinstance(other, Vector):
+			return Segment(*(p - other for p in self.p))
+		raise TypeError('Can only subtract Vectors from Segments')
 	def scale(self, c, P = origin):
 		return Segment(*(P + (p - P) * c for p in self.p))
 	def rotate(self, angle, P = origin):
@@ -434,9 +438,19 @@ class Part:
 		return 'Part:' + ''.join('\n\t%s' % s for s in self.segment)
 	def __getitem__(self, n):
 		return self.segment[n]
-	def __sub__(self, other):
+	def __add__(self, other):
+		if isinstance(other, Vector):
+			# translate
+			return Part(*(s + other for s in self.segment))
 		if not isinstance(other, Part):
-			raise TypeError('Parts can only be subtracted from other Parts')
+			raise TypeError('Parts can only be added to other Parts or Vectors')
+		return self.combine(other, 1)
+	def __sub__(self, other):
+		if isinstance(other, Vector):
+			# translate
+			return Part(*(s - other for s in self.segment))
+		if not isinstance(other, Part):
+			raise TypeError('Only Parts and Vectors can be subtracted from Parts')
 		return self + -other
 	def __mul__(self, other):
 		if not isinstance(other, Part):
@@ -450,12 +464,46 @@ class Part:
 		return Part(*(s.rotate(angle, P) for s in self.segment))
 	def mirror(self):
 		return Part(*(s.mirror() for s in self.segment))
+	def bbox(self, internal = False):
+		bb = [None] * 4
+		for s in self.segment:
+			for point in s.p:
+				x, y = point.c
+				if bb[0] is None or bb[0] > x:
+					bb[0] = x
+				if bb[1] is None or bb[1] > y:
+					bb[1] = y
+				if bb[2] is None or bb[2] < x:
+					bb[2] = x
+				if bb[3] is None or bb[3] < y:
+					bb[3] = y
+		if internal:
+			return bb
+		else:
+			return [c / unit for c in bb]
+	def align(self, target):
+		bb = self.bbox(True)
+		if target[0][0] == 't':
+			y = bb[3]
+		elif target[0][0] == 'c':
+			y = 0
+		elif target[0][0] == 'b':
+			y = bb[1]
+		else:
+			raise ValueError('Invalid vertical alignment %s' % target[0])
+		if target[1][0] == 'l':
+			x = bb[0]
+		elif target[1][0] == 'c':
+			x = 0
+		elif target[1][0] == 'r':
+			x = bb[2]
+		else:
+			raise ValueError('Invalid horizontal alignment %s' % target[0])
+		cc = (bb[2] - bb[0], bb[3] - bb[1])
+		return self - Vector(x - cc[0], y - cc[0])
 	def combine(self, other, min_stack = 1):
-		if isinstance(other, Vector):
-			# translate
-			return Part(*(s + other for s in self.segment))
 		if not isinstance(other, Part):
-			raise TypeError('Parts can only be added to other Parts or Vectors')
+			raise TypeError('Parts can only be combined with other Parts')
 		# Put all lines in a list.
 		lines = []
 		for o in (self, other):
@@ -596,12 +644,9 @@ class Part:
 			stack.append({'group': branch['contains'], 'current': 0, 'depth': depth})
 		# Handle non-polygon segments.
 		open = [s for s in self.segment if s.is_hole is None] + [s for s in other.segment if s.is_hole is None]
-		# TODO: cut overlapping parts from non-polygon segments.
 		# Create a new Part from the lines.
 		new_result += open
 		return Part(*new_result)
-	def __add__(self, other):
-		return self.combine(other, 1)
 	def offset(self, c):
 		return Part(*(s.offset(c) for s in self.segment)) + Part()
 	def hull(self):
@@ -622,18 +667,7 @@ def svg(*parts, **kwargs):
 	total_bb = [None] * 4
 	offset = []
 	for p in parts:
-		bb = [None] * 4
-		for s in p.segment:
-			for point in s.p:
-				x, y = point.c
-				if bb[0] is None or bb[0] > x:
-					bb[0] = x
-				if bb[1] is None or bb[1] > y:
-					bb[1] = y
-				if bb[2] is None or bb[2] < x:
-					bb[2] = x
-				if bb[3] is None or bb[3] < y:
-					bb[3] = y
+		bb = p.bbox(True)
 		if total_bb[0] is None:
 			total_bb = bb
 			offset.append((0, 0))
@@ -675,17 +709,16 @@ def svg(*parts, **kwargs):
 def polygon(*points):
 	return Part(Segment(*(P(*p) for p in points)))
 
-def rect(w, h, x = 0, y = 0):
-	x0 = x - w / 2
-	x1 = x + w / 2
-	y0 = y - h / 2
-	y1 = y + h / 2
-	return polygon((x0, y0), (x0, y1), (x1, y1), (x1, y0), (x0, y0))
+def rect(w, h):
+	w /= 2
+	h /= 2
 
-def circle(r, x = 0, y = 0, fn = 50):
+	return polygon((-w, -h), (-w, h), (w, h), (w, -h), (-w, -h))
+
+def circle(r, fn = 50):
 	def mkp(a):
 		angle = a * 2 * math.pi / fn
-		return (x + r * math.cos(angle), y + r * math.sin(angle))
+		return (r * math.cos(angle), r * math.sin(angle))
 	# Use -a, because a ccw polygon is a hole.
 	p = [mkp(-a) for a in range(fn)]
 	p.append(p[0])
