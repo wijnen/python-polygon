@@ -11,15 +11,26 @@ from polygon import *
 # 3 zakjes naast elkaar, 2mm speling, 5mm wood: 3*(65+2)+4*5 = 221
 # 2 vakjes van 10 zakjes per kolom: 2*7*10+3*5 = 155
 
-wood = 5
-thee = [65 + 2, 7 * 10, 77]
-vakjes = [3, 2, 1]
-tand_maxlen = 50
-h_mid = thee[2] - 10
-h_mid_low = thee[2] - 20
-r = 20
-w_key = 40
-l_key = 10
+if True:	# Wooden box for tea.
+	wood = 3.2
+	thee = [65 + 2, 7 * 10, 77]
+	vakjes = [3, 2, 1]
+	tand_maxlen = 50
+	h_mid = thee[2] - 20
+	h_mid_low = thee[2] - 25
+	r = 15
+	w_key = 40
+	l_key = 10
+else:		# Testing with small piece of cardboard.
+	wood = 5
+	thee = [40, 50, 40]
+	vakjes = [2, 2, 1]
+	tand_maxlen = 50
+	h_mid = thee[2] - 10
+	h_mid_low = thee[2] - 20
+	r = 5
+	w_key = 40
+	l_key = 10
 
 def num_teeth(l):
 	'''Compute number of teeth based on the length of the line.
@@ -62,7 +73,7 @@ def sidel():
 	ret = rect(*(size[i] + 2 * wood for i in (2, 1)))
 	l = size[2] - (1 + 3 ** .5) * r
 	# Remove "teeth"-part in curve.
-	ret -= rect(size[2] - l + wood, wood) + V((size[2] - l + wood) / 2 - size[2] / 2 - wood, size[1] / 2 + wood / 2)
+	ret -= rect(size[2] - l + wood + 2 / unit, wood) + V((size[2] - l + wood) / 2 - size[2] / 2 - wood, size[1] / 2 + wood / 2 + 1 / unit)
 	# Back teeth.
 	ret -= teeth(l, True, False) + V(-l / 2 + size[2] / 2, (size[1] + wood) / 2)
 	# Curve on the back (part 1).
@@ -90,9 +101,9 @@ def midv():
 		ret -= teeth(h_mid_low, True) + V(h_mid_low / 2 - h_mid / 2 + wood / 2, side * (size[1] + wood) / 2)
 	for n in range(1, vakjes[1]):
 		ret -= rect(h_mid_low / 2 + wood, wood) + V(-(h_mid + wood) / 2 + (h_mid_low / 2 + wood) / 2, -(size[1] + wood) / 2 + n * (thee[1] + wood))
-	corner = rect(h_mid, h_mid).rotate(45) + V((h_mid - wood) / 2 ** .5, 0) # - rect(wood, wood * 2, -wood / 2, 0)
+	corner = (rect(h_mid, h_mid).rotate(45) + V(h_mid / 2 ** .5 - wood / 2, 0) - (rect(wood * 2, wood * 2) + V(-wood, 0))) + V(-(h_mid + wood) / 2 + wood + h_mid_low, 0)
 	for n in range(vakjes[1] + 1):
-		ret -= corner + V(h_mid / 2 + wood / 2 - (h_mid - h_mid_low), -(size[1] + wood) / 2 + n * (thee[1] + wood))
+		ret -= corner + V(0, -(size[1] + wood) / 2 + n * (thee[1] + wood))
 	return ret
 
 def front():
@@ -108,9 +119,9 @@ def front():
 def midh():
 	ret = rect(size[0] + 2 * wood, h_mid + wood)
 	ret -= teeth(size[0], True) + V(0, -h_mid / 2)
-	corner = rect(h_mid, h_mid).rotate(45) + V(0, (h_mid - wood) / 2 ** .5) # - rect(wood, wood * 2, -wood / 2, 0)
+	corner = (rect(h_mid, h_mid).rotate(45) + V(0, h_mid / 2 ** .5 - wood / 2) - (rect(wood * 2, wood * 2) + V(0, -wood))) + V(0, -(h_mid + wood) / 2 + wood + h_mid_low)
 	for n in range(vakjes[0] + 1):
-		ret -= corner + V(-(size[0] + wood) / 2 + n * (thee[0] + wood), h_mid / 2 + wood / 2 - (h_mid - h_mid_low))
+		ret -= corner + V(-(size[0] + wood) / 2 + n * (thee[0] + wood), 0)
 	for side in [-1, 1]:
 		ret -= teeth(h_mid_low, True).rotate(90) + V(side * (size[0] + wood) / 2, h_mid_low / 2 - h_mid / 2 + wood / 2)
 	for n in range(1, vakjes[0]):
@@ -129,6 +140,8 @@ def backtop():
 		#ret -= rect(wood, wood) + V(side * (size[0] + wood) / 2, (h - wood) / 2)
 	# Add key.
 	ret += rect(w_key, l_key) + V(0, h / 2 + l_key / 2)
+	for n in range(1, vakjes[0]):
+		ret -= teeth(h_mid_low).rotate(90) + V(-(size[0] + wood) / 2 + n * (thee[0] + wood), -h / 2 + wood + h_mid_low / 2)
 	# Make bending cuts.
 	uncut = 4 * wood
 	num = max(1, round(curve / (2 * wood)))
@@ -153,4 +166,4 @@ for m in range(vakjes[1] - 1):
 	midhs += midh() + V(size[0] + 2 * wood, 0) * m
 svg(base(), sider(), backtop(), sidel(), midvs, front(), (midhs + V(0, size[2] + 1.5 * wood)), file = '/tmp/thee.svg')
 #'''
-#svg(front(), file = '/tmp/thee.svg')
+#svg(sidel(), file = '/tmp/thee.svg')

@@ -67,7 +67,7 @@ fhs.module_option('polygon', 'style', 'draw style for opbjects', default = 'fill
 # Internally all computations are done with ints. The ints represent fixed
 # point numbers. They should be divided by unit to get the number they
 # represent.
-unit = 1 << 10
+unit = 1 << 16
 
 def dbg(*a):
 	#print(*a) #, file = sys.stderr)
